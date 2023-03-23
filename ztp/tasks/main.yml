@@ -1,0 +1,95 @@
+---
+  - name: proof
+    ping:
+
+  - name: install tftp-server
+    ansible.builtin.yum:
+      name: 
+        - tftp-server
+        - tftp
+      state: latest
+
+  - name: copy service files
+    ansible.builtin.copy:
+      src: "{{ item.src }}"
+      dest: "{{ item.dest }}"
+      mode: 0744
+      owner: root
+      group: root
+      remote_src: yes
+    with_items:
+      - { src: '/usr/lib/systemd/system/tftp.service', dest: '/etc/systemd/system/tftp-server.service' }
+      - { src: '/usr/lib/systemd/system/tftp.socket', dest: '/etc/systemd/system/tftp-server.socket' }
+
+  - name: replace line in socket conf
+    ansible.builtin.lineinfile:
+      path: /etc/systemd/system/tftp-server.service
+      regexp: '^Requires*'
+      line: 'Requires=tftp-server.socket'
+
+  - name: replace line in socket conf
+    ansible.builtin.lineinfile:
+      path: /etc/systemd/system/tftp-server.service
+      regexp: '^ExecStart*'
+      line: 'ExecStart=/usr/sbin/in.tftpd -c -p -s /var/lib/tftpboot'
+
+  - name: replace line in socket conf
+    ansible.builtin.lineinfile:
+      path: /etc/systemd/system/tftp-server.service
+      regexp: '^Also=tftp.socket'
+      line: 'Also=tftp-server.socket'
+
+    
+  - name: add line in socket conf
+    ansible.builtin.lineinfile:
+      dest: /etc/systemd/system/tftp-server.service
+      insertbefore: 'Also=tftp-server.socket'
+      line: "WantedBy=multi-user.target"
+      state: present
+
+  - name: reload systemd
+    command: systemctl daemon-reload
+
+  - name: tftp start
+    ansible.builtin.systemd:
+      name: tftp-server
+      state: restarted
+      enabled: true
+
+  - name: change permission
+    ansible.builtin.file:
+      path: /var/lib/tftpboot
+      mode: '0777'
+
+  - name: warning
+    ansible.builtin.debug:
+      msg: 
+        - "disable firewalld and selinux otherwise tftp will not run"
+        - "this is more a poc than a final installation"
+
+
+  - name: install dhcp-server
+    ansible.builtin.yum:
+      name: dhcp-server
+      state: latest
+
+  - name: copy template dhcpd.conf
+    ansible.builtin.template:
+      src: dhcpd.conf
+      dest: /etc/dhcp/dhcpd.conf
+      owner: root
+      group: root
+
+  - name: dhcp start
+    ansible.builtin.systemd:
+      name: dhcpd
+      state: restarted
+      enabled: true
+    
+  - name: copy python ztp
+    ansible.builtin.template:
+      src: ZTP_python.py
+      dest: /var/lib/tftpboot/ZTP_python.py
+      owner: root
+      group: root
+      mode: 0775
